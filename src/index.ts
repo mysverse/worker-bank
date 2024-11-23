@@ -145,14 +145,15 @@ async function sendInGameUpdate(env: Env, userId: string, amount: number, bankNa
 	if (!response.ok) console.error('Failed to send in-game update');
 }
 
-async function logTransaction(env: Env, userId: string, amount: number, bankName: string, discordId?: string): Promise<void> {
+async function logTransaction(env: Env, userId: string, amount: number, bankName: string, discordId?: string): Promise<number> {
 	const query = `
 	  INSERT INTO transactions (userId, amount, bankName, discordId)
 	  VALUES (?, ?, ?, ?);
 	`;
-	const stmt = env.DB.prepare(query).bind(userId, amount, bankName, discordId);
+	const stmt = env.DB.prepare(query).bind(userId, amount, bankName, discordId ?? null);
 	const result = await stmt.run();
 	if (!result.success) throw new Error('Failed to log transaction');
+	return result.meta.last_row_id;
 }
 
 // Get transactions
@@ -190,6 +191,16 @@ async function getTransactions(env: Env, userId: string, bankName: string) {
 	const stmt = env.DB.prepare(query).bind(userId, bankName);
 	const result = await stmt.run<Transaction>();
 	return result.results;
+}
+
+async function rollbackTransactionLog(env: Env, id: number): Promise<void> {
+	const query = `
+      DELETE FROM transactions
+      WHERE id = ?;
+    `;
+	const stmt = env.DB.prepare(query).bind(id);
+	const result = await stmt.run();
+	if (!result.success) throw new Error('Failed to rollback transaction log');
 }
 
 export default {
@@ -230,27 +241,30 @@ export default {
 
 			// Parse request body
 			const { amount, userId, discordId } = (await request.json()) as TransactionRequest;
+
 			if (typeof amount !== 'number' || typeof userId !== 'string' || amount <= 0) {
 				return new Response('Invalid input', { status: 400 });
 			}
 
-			// Process the transaction
-			const result = await processTransaction(env, userId, amount);
-
 			// Log the transaction
-			await logTransaction(env, userId, amount, bankName, discordId);
+			const transactionId = await logTransaction(env, userId, amount, bankName, discordId);
 
-			// Send in-game update
-			await sendInGameUpdate(env, userId, amount, bankName);
-
-			return Response.json({
-				success: true,
-				result,
-				bankName,
-				metadata: {
-					discordId,
-				},
-			});
+			try {
+				// Process the transaction and send in-game update
+				const result = await processTransaction(env, userId, amount);
+				await sendInGameUpdate(env, userId, amount, bankName);
+				return Response.json({
+					success: true,
+					result,
+					bankName,
+					metadata: {
+						discordId,
+					},
+				});
+			} catch (error) {
+				await rollbackTransactionLog(env, transactionId);
+				throw error;
+			}
 		} catch (error: unknown) {
 			let message = 'Unknown';
 			if (error instanceof Error) {
