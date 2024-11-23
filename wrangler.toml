@@ -1,8 +1,10 @@
 #:schema node_modules/wrangler/config-schema.json
 name = "mysverse-bank"
 main = "src/index.ts"
-compatibility_date = "2024-11-12"
+compatibility_date = "2024-11-23"
 compatibility_flags = ["nodejs_compat"]
+
+routes = [{ pattern = "bank-api.mysver.se", custom_domain = true }]
 
 # Workers Logs
 # Docs: https://developers.cloudflare.com/workers/observability/logs/workers-logs/
@@ -22,7 +24,8 @@ enabled = true
 # - https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
 # Note: Use secrets to store sensitive data.
 # - https://developers.cloudflare.com/workers/configuration/secrets/
-# [vars]
+[vars]
+UNIVERSE_ID = "184792771"
 # MY_VARIABLE = "production_value"
 
 # Bind the Workers AI model catalog. Run machine learning models, powered by serverless GPUs, on Cloudflare’s global network
@@ -42,10 +45,10 @@ enabled = true
 
 # Bind a D1 database. D1 is Cloudflare’s native serverless SQL database.
 # Docs: https://developers.cloudflare.com/workers/wrangler/configuration/#d1-databases
-# [[d1_databases]]
-# binding = "MY_DB"
-# database_name = "my-database"
-# database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+[[d1_databases]]
+binding = "DB"
+database_name = "mysverse-bank"
+database_id = "6ea93640-6ca2-48d5-b341-4ba1666f403f"
 
 # Bind a dispatch namespace. Use Workers for Platforms to deploy serverless functions programmatically on behalf of your customers.
 # Docs: https://developers.cloudflare.com/workers/wrangler/configuration/#dispatch-namespace-bindings-workers-for-platforms
@@ -74,9 +77,9 @@ enabled = true
 
 # Bind a KV Namespace. Use KV as persistent storage for small key-value pairs.
 # Docs: https://developers.cloudflare.com/workers/wrangler/configuration/#kv-namespaces
-# [[kv_namespaces]]
-# binding = "MY_KV_NAMESPACE"
-# id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+[[kv_namespaces]]
+binding = "API_KEYS"
+id = "289d2f9af1f94a828db70cb5c77063b3"
 
 # Bind an mTLS certificate. Use to present a client certificate when communicating with another service.
 # Docs: https://developers.cloudflare.com/workers/wrangler/configuration/#mtls-certificates
