@@ -1,7 +1,11 @@
+type TransactionType = 'debit' | 'credit';
+
 interface TransactionRequest {
 	amount: number;
 	userId: string;
 	discordId?: string;
+	// NEW: optional transactionType
+	transactionType?: TransactionType;
 }
 
 interface RobloxData {
@@ -9,7 +13,7 @@ interface RobloxData {
 }
 
 async function processTransaction(env: Env, userId: string, amount: number) {
-	// Step 1: Get the latest data key and ETag
+	// Step 1: Get the latest data key
 	const datastoreName = `DATA/${userId}`;
 	const { latestDataKey } = await getLatestDataKeyAndETag(env, datastoreName, userId);
 
@@ -86,10 +90,10 @@ interface TransactionResult {
 }
 
 function modifyData(data: RobloxData, amount: number): TransactionResult {
-	if (amount <= 0) {
-		throw new Error('Invalid amount');
-	}
 	const before = data.bandar_ringgit || 0;
+	if (before + amount < 0) {
+		throw new Error('Insufficient funds to perform this transaction');
+	}
 	data.bandar_ringgit = (data.bandar_ringgit || 0) + amount;
 	const after = data.bandar_ringgit || 0;
 	return { before, after, newData: data };
@@ -120,7 +124,13 @@ async function saveData(env: Env, dataStoreName: string, data: RobloxData, dataK
 	// No need to create a new backup in Ordered DataStore
 }
 
-async function sendInGameUpdate(env: Env, userId: string, amount: number, bankName: string): Promise<void> {
+async function sendInGameUpdate(
+	env: Env,
+	userId: string,
+	amount: number,
+	bankName: string,
+	transactionType: TransactionType
+): Promise<void> {
 	const { ROBLOX_API_KEY, UNIVERSE_ID } = env;
 	const topic = 'UpdateCurrency';
 
@@ -128,6 +138,7 @@ async function sendInGameUpdate(env: Env, userId: string, amount: number, bankNa
 		userId,
 		amount,
 		bankName,
+		transactionType,
 	};
 
 	const url = `https://apis.roblox.com/messaging-service/v1/universes/${UNIVERSE_ID}/topics/${encodeURIComponent(topic)}`;
@@ -240,11 +251,21 @@ export default {
 			}
 
 			// Parse request body
-			const { amount, userId, discordId } = (await request.json()) as TransactionRequest;
+			const { amount: absoluteAmount, userId, discordId, transactionType } = (await request.json()) as TransactionRequest;
 
-			if (typeof amount !== 'number' || typeof userId !== 'string' || amount <= 0) {
+			if (
+				typeof absoluteAmount !== 'number' ||
+				typeof userId !== 'string' ||
+				absoluteAmount === 0 ||
+				(transactionType && transactionType !== 'debit' && transactionType !== 'credit')
+			) {
 				return new Response('Invalid input', { status: 400 });
 			}
+
+			// Default to 'deposit' if no transactionType is provided
+			const finalTransactionType: TransactionType = transactionType ?? 'debit';
+			// Convert the amount to negative if it's a withdrawal
+			const amount = finalTransactionType === 'credit' ? -absoluteAmount : absoluteAmount;
 
 			// Log the transaction
 			const transactionId = await logTransaction(env, userId, amount, bankName, discordId);
@@ -252,11 +273,12 @@ export default {
 			try {
 				// Process the transaction and send in-game update
 				const result = await processTransaction(env, userId, amount);
-				await sendInGameUpdate(env, userId, amount, bankName);
+				await sendInGameUpdate(env, userId, absoluteAmount, bankName, finalTransactionType);
 				return Response.json({
 					success: true,
 					result,
 					bankName,
+					transactionType: finalTransactionType,
 					metadata: {
 						discordId,
 					},
