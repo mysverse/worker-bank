@@ -34,11 +34,11 @@ async function getLatestDataKeyAndETag(env: Env, orderedDataStoreName: string, u
 
 	const scope = 'global';
 	const maxPageSize = 1;
-	const orderBy = 'desc';
+	const orderBy = 'value desc';
 
-	const url = `https://apis.roblox.com/ordered-data-stores/v1/universes/${UNIVERSE_ID}/orderedDataStores/${encodeURIComponent(
+	const url = `https://apis.roblox.com/cloud/v2/universes/${UNIVERSE_ID}/ordered-data-stores/${encodeURIComponent(
 		orderedDataStoreName
-	)}/scopes/${scope}/entries?max_page_size=${maxPageSize}&order_by=${orderBy}`;
+	)}/scopes/${scope}/entries?maxPageSize=${maxPageSize}&orderBy=${orderBy}`;
 
 	const response = await fetch(url, {
 		method: 'GET',
@@ -52,11 +52,11 @@ async function getLatestDataKeyAndETag(env: Env, orderedDataStoreName: string, u
 
 	const data = (await response.json()) as any;
 
-	if (!data.entries || data.entries.length === 0) {
+	if (!data.orderedDataStoreEntries || data.orderedDataStoreEntries.length === 0) {
 		throw new Error('No entries found in Ordered DataStore for this user');
 	}
 
-	const latestEntry = data.entries[0];
+	const latestEntry = data.orderedDataStoreEntries[0];
 	const latestDataKey = latestEntry.id as string;
 
 	return { latestDataKey };
