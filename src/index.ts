@@ -1,12 +1,14 @@
-type TransactionType = 'debit' | 'credit';
+import { z } from 'zod';
 
-interface TransactionRequest {
-	amount: number;
-	userId: string;
-	discordId?: string;
-	// NEW: optional transactionType
-	transactionType?: TransactionType;
-}
+const TransactionRequestSchema = z.object({
+	amount: z.number().refine((val) => val !== 0, { message: 'Amount cannot be zero' }),
+	userId: z.string().min(1),
+	discordId: z.string().optional(),
+	transactionType: z.enum(['debit', 'credit']).optional(),
+	bankName: z.string().min(1).optional(),
+});
+
+type TransactionType = z.infer<typeof TransactionRequestSchema>['transactionType'];
 
 interface RobloxData {
 	bandar_ringgit?: number;
@@ -250,34 +252,30 @@ export default {
 				});
 			}
 
-			// Parse request body
-			const { amount: absoluteAmount, userId, discordId, transactionType } = (await request.json()) as TransactionRequest;
-
-			if (
-				typeof absoluteAmount !== 'number' ||
-				typeof userId !== 'string' ||
-				absoluteAmount === 0 ||
-				(transactionType && transactionType !== 'debit' && transactionType !== 'credit')
-			) {
+			// Parse and validate request body
+			const requestBody = await request.json();
+			const parseResult = TransactionRequestSchema.safeParse(requestBody);
+			if (!parseResult.success) {
 				return new Response('Invalid input', { status: 400 });
 			}
+			const { amount: absoluteAmount, userId, discordId, transactionType, bankName: overrideBankName } = parseResult.data;
 
-			// Default to 'deposit' if no transactionType is provided
 			const finalTransactionType: TransactionType = transactionType ?? 'debit';
+			const finalBankName = overrideBankName ?? bankName;
 			// Convert the amount to negative if it's a withdrawal
 			const amount = finalTransactionType === 'credit' ? -absoluteAmount : absoluteAmount;
 
 			// Log the transaction
-			const transactionId = await logTransaction(env, userId, amount, bankName, discordId);
+			const transactionId = await logTransaction(env, userId, amount, finalBankName, discordId);
 
 			try {
 				// Process the transaction and send in-game update
 				const result = await processTransaction(env, userId, amount);
-				await sendInGameUpdate(env, userId, absoluteAmount, bankName, finalTransactionType);
+				await sendInGameUpdate(env, userId, absoluteAmount, finalBankName, finalTransactionType);
 				return Response.json({
 					success: true,
 					result,
-					bankName,
+					bankName: finalBankName,
 					transactionType: finalTransactionType,
 					metadata: {
 						discordId,
