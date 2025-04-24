@@ -238,8 +238,10 @@ export default {
 				if (!userId) {
 					return new Response('Invalid input', { status: 400 });
 				}
-				const transactions = await getTransactions(env, userId, bankName);
-				const discordId = await getDiscordId(env, userId, bankName);
+				const overrideBankName = url.searchParams.get('bankName');
+				const finalBankName = overrideBankName ?? bankName;
+				const transactions = await getTransactions(env, userId, finalBankName);
+				const discordId = await getDiscordId(env, userId, finalBankName);
 				return Response.json({
 					transactions: transactions.map((transaction) => ({
 						id: transaction.id,
@@ -248,6 +250,7 @@ export default {
 					})),
 					metadata: {
 						discordId,
+						bankName: finalBankName,
 					},
 				});
 			}
