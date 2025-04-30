@@ -15,18 +15,29 @@ interface RobloxData {
 }
 
 async function processTransaction(env: Env, userId: string, amount: number) {
-	// Step 1: Get the latest data key
-	const datastoreName = `DATA/${userId}`;
-	const { latestDataKey } = await getLatestDataKeyAndETag(env, datastoreName, userId);
+	const MAIN_KEY = 'DATA';
+	const standardStore = MAIN_KEY;
+	const orderedStore = `${MAIN_KEY}/${userId}`;
 
-	// Step 2: Fetch data from standard DataStore
-	const data = await getData(env, datastoreName, latestDataKey);
+	// Try standard DataStore first
+	let storeName = standardStore;
+	let dataKey = userId;
+	let data = await getData(env, standardStore, dataKey);
 
-	// Step 3: Modify the data
-	const { before, after, newData: modifiedData } = modifyData(data, amount);
+	// Fallback to Ordered DataStore
+	if (!data) {
+		storeName = orderedStore;
+		const { latestDataKey } = await getLatestDataKeyAndETag(env, orderedStore, userId);
+		dataKey = latestDataKey;
+		data = await getData(env, orderedStore, dataKey);
+		if (!data) {
+			throw new Error('No data found for this user');
+		}
+	}
 
-	// Step 4: Save the data using conditional update
-	await saveData(env, datastoreName, modifiedData, latestDataKey);
+	// Modify and save
+	const { before, after, newData } = modifyData(data, amount);
+	await saveData(env, storeName, newData, dataKey);
 
 	return { before, after };
 }
@@ -64,7 +75,7 @@ async function getLatestDataKeyAndETag(env: Env, orderedDataStoreName: string, u
 	return { latestDataKey };
 }
 
-async function getData(env: Env, dataStoreName: string, dataKey: string): Promise<RobloxData> {
+async function getData(env: Env, dataStoreName: string, dataKey: string): Promise<RobloxData | null> {
 	const { ROBLOX_API_KEY, UNIVERSE_ID } = env;
 
 	const url = `https://apis.roblox.com/datastores/v1/universes/${UNIVERSE_ID}/standard-datastores/datastore/entries/entry?datastoreName=${dataStoreName}&entryKey=${encodeURIComponent(
@@ -78,7 +89,13 @@ async function getData(env: Env, dataStoreName: string, dataKey: string): Promis
 		},
 	});
 
-	if (!response.ok) throw new Error('Failed to fetch data from DataStore');
+	if (!response.ok) {
+		if (response.status === 404) {
+			return null; // Entry not found
+		}
+		console.error(await response.json());
+		throw new Error('Failed to fetch data from DataStore');
+	}
 
 	const data: RobloxData = await response.json();
 
